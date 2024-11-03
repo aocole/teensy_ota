@@ -14,6 +14,12 @@
 // WARNING: You can brick your Teensy with incorrect flash erase/write, such as
 // incorrect flash config (0x400-40F). This code may or may not prevent that.
 
+// 11/02/24 @aocole - update via http over ethernet
+//   - integrate some code/ideas from @ssaenger/FlasherX-Ethernet_Support
+//   - write the uploaded file to SD card and then apply from there for
+//     better reliability.
+//   - skip interactive confirmation when applying from SD card
+//   - This code is released into the public domain.
 // 10/09/22 (v2.3) JWP - option for reading hex file from serial or SD
 //   - move hex file support functions to new file FXUtil.cpp
 //   - update_firmware() now takes two Stream* arguments ("in" and "out")
@@ -48,9 +54,9 @@
 //    https://namoseley.wordpress.com/2015/02/04/freescale-kinetis-mk20dx-series-flash-erasing/
 
 #include <SD.h>
-#include "FXUtil.h"		// read_ascii_line(), hex file support
+#include "src/FlasherX/FXUtil.h"		// read_ascii_line(), hex file support
 extern "C" {
-  #include "FlashTxx.h"		// TLC/T3x/T4x/TMM flash primitives
+  #include "src/FlasherX/FlashTxx.h"		// TLC/T3x/T4x/TMM flash primitives
 }
 #include <QNEthernet.h>
 #include <AsyncWebServer_Teensy41.h>
@@ -58,7 +64,7 @@ extern "C" {
 using namespace qindesign::network;
 
 #define WAIT_FOR_LOCAL_IP_WAIT_TIME 15000
-#define HOSTNAME "MyTeensyWincyProj"
+#define HOSTNAME "BAJ"
 #define STATIC_IP_ADDR_STRNG "192.168.1.113"
 #define GATEWAY_IP_ADDR_STRING "192.168.1.1"
 #define SUBNET_MASK_STRING "255.255.255.0"
