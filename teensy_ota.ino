@@ -69,7 +69,7 @@ using namespace qindesign::network;
 
 #define HTTP_MAX_MESSAGE_RESP 512
 
-#define VERSION 2
+#define VERSION 1
 
 #if !USING_DHCP
   // Set the static IP address to use if the DHCP fails to assign
@@ -80,7 +80,7 @@ using namespace qindesign::network;
 #endif
 
 AsyncWebServer   *webServer;
-bool              updateAvailable;
+bool              updateAvailable = false;
 
 void handleNotFound(AsyncWebServerRequest *Request)
 {
@@ -129,10 +129,21 @@ const int ledPin = 13;
 const char* urlPath = "/";
 File hexFile;
 
-void TOA_Callack()
-{
-  Serial.println("An update is available");
-  updateAvailable = true;
+void update_from_sdcard(uint32_t buffer_addr, uint32_t buffer_size) {
+    if (!SD.begin( cs )) {
+      serial->println( "SD initialization failed" );
+      return;
+    }
+    File hexFile;
+    serial->println( "SD initialization OK" );
+    hexFile = SD.open( HEX_FILE_NAME, FILE_READ );
+    if (!hexFile) {
+      serial->println( "SD file open failed" );
+      return;
+    }
+    serial->println( "SD file open OK" );
+    // read hex file, write new firmware to flash, clean up, reboot
+    update_firmware( &hexFile, serial, buffer_addr, buffer_size );
 }
 
 void EndOta(AsyncWebServerRequest *request)
@@ -147,9 +158,9 @@ void EndOta(AsyncWebServerRequest *request)
     char pageOut[HTTP_MAX_MESSAGE_RESP];
     unsigned int len;
 
+    updateAvailable = true;
     len = snprintf(pageOut, HTTP_MAX_MESSAGE_RESP, "<body><h1>cool, got it. %u bytes</h1>", p->size());
     request->send(200, "text/html", pageOut);
-
 }
 
 void StartOta(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final)
@@ -158,7 +169,9 @@ void StartOta(AsyncWebServerRequest *request, String filename, size_t index, uin
     // int          errorVal;
     // unsigned int off = 0;
     // char *abortMsg = (char*)"";
-    Serial.printf("OTA %s:  len, %d, index: %d\r\n", filename, len, index);
+
+    // Serial.printf("OTA: len, %d, index: %d\r\n", filename, len, index);
+    
     if (!hexFile) {
       if (!SD.begin( cs )) {
         serial->println( "SD initialization failed" );
@@ -176,6 +189,7 @@ void StartOta(AsyncWebServerRequest *request, String filename, size_t index, uin
     }
     if (hexFile) {
       hexFile.write(data, len);
+      serial->print(".");
     }
 }
 
@@ -284,6 +298,8 @@ void loop ()
 {
   uint32_t buffer_addr, buffer_size;
 
+  serial->printf( "\n\n Version %d\n", VERSION);
+
   // create flash buffer to hold new firmware
   if (firmware_buffer_init( &buffer_addr, &buffer_size ) == 0) {
     serial->printf( "unable to create buffer\n" );
@@ -295,37 +311,13 @@ void loop ()
 		buffer_size/1024, IN_FLASH(buffer_addr) ? "FLASH" : "RAM",
 		buffer_addr, buffer_addr + buffer_size );
 
-  // get user input to read from serial or SD
-  int user_input = -1;
-  char line[32];
-  while (user_input != 1 && user_input != 2) {
-    serial->printf( "This is version %d\n", VERSION );
-    serial->printf( "enter 1 for hex file via serial, 2 for hex file via SD\n" );
-    read_ascii_line( serial, line, sizeof(line) );
-    sscanf( line, "%d", &user_input );
+  while (!updateAvailable) {
+    delay(200);
   }
-  
-  if (user_input == 1) { // serial 
-    // read hex file, write new firmware to flash, clean up, reboot
-    update_firmware( serial, serial, buffer_addr, buffer_size );
-  }
-  else if (user_input == 2) { // SD
-    if (!SD.begin( cs )) {
-      serial->println( "SD initialization failed" );
-      return;
-    }
-    File hexFile;
-    serial->println( "SD initialization OK" );
-    hexFile = SD.open( HEX_FILE_NAME, FILE_READ );
-    if (!hexFile) {
-      serial->println( "SD file open failed" );
-      return;
-    }
-    serial->println( "SD file open OK" );
-    // read hex file, write new firmware to flash, clean up, reboot
-    update_firmware( &hexFile, serial, buffer_addr, buffer_size );
-  }
-  
+
+  serial->println("Update is available");
+  update_from_sdcard(buffer_addr, buffer_size);
+
   // return from update_firmware() means error or user abort, so clean up and
   // reboot to ensure that static vars get boot-up initialized before retry
   serial->printf( "erase FLASH buffer / free RAM buffer...\n" );
